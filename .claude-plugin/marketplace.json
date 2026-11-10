@@ -1,0 +1,7 @@
+{
+  "name": "reel-scout",
+  "owner": {"name": "Ritik"},
+  "plugins": [
+    {"name": "reel-scout", "source": "./", "description": "Your own Instagram reel scout for any niche."}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "reel-scout",
+  "description": "Set up your own Instagram scout for any niche: finds reels beating their creator's usual views, fresh news, and writes 5 ideas a week.",
+  "version": "0.1.0",
+  "author": {"name": "Ritik"},
+  "license": "MIT",
+  "keywords": ["instagram", "reels", "content", "creators", "trends"]
+}

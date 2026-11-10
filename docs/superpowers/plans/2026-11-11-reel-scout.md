@@ -214,8 +214,8 @@ def test_rank_uses_stored_median_when_5_or_more():
 def test_rank_thresholds_and_junk_items():
     items = [reel("alice", c, v) for c, v in [("a", 100), ("b", 100), ("c", 100), ("d", 900), ("e", 800), ("f", 700), ("g", 600)]]
     items += [{"error": "not_found", "url": "x"}, reel("alice", "z", 0), reel("", "q", 5000)]
-    w = scout.rank(items, {"alice": "main"}, {}, {**S, "min_views": 650, "per_creator": 2})
-    assert [x["code"] for x in w] == ["d", "e"]          # median 600 from this run; f/g below ratio or views; capped at 2
+    w = scout.rank(items, {"alice": "main"}, {}, {**S, "min_ratio": 1.1, "min_views": 650, "per_creator": 2})
+    assert [x["code"] for x in w] == ["d", "e"]          # median 600 from this run; d/e/f pass, g is 1.0x; capped at 2
 
 
 def test_pick_new_respects_slots_and_seen():
