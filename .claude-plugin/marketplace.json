@@ -1,7 +1,16 @@
 {
   "name": "reel-scout",
-  "owner": {"name": "Ritik"},
+  "owner": {
+    "name": "Ritik"
+  },
+  "metadata": {
+    "description": "Reel Scout: your own Instagram reel scout for any niche."
+  },
   "plugins": [
-    {"name": "reel-scout", "source": "./", "description": "Your own Instagram reel scout for any niche."}
+    {
+      "name": "reel-scout",
+      "source": "./",
+      "description": "Your own Instagram reel scout for any niche."
+    }
   ]
 }
