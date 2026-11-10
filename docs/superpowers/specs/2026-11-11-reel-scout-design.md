@@ -106,7 +106,7 @@ python discover.py <scout-dir> --hashtags shayari,hindipoetry,... [--per 40] [--
 
 Apify `apify~instagram-hashtag-scraper` (reels per hashtag) → group by owner → list accounts with reel count,
 median views, best reel, last post date, sample captions. Writes `candidates.json` in the scout folder. Claude
-shows the top ~25 as a table; the user picks. Cost ≈ $0.30 for 8 hashtags × 40 reels.
+shows the top ~25 as a table; the user picks. Cost ≈ $0.60 for 8 hashtags × 40 reels (measured 2026-11-10: $0.62).
 
 ## The skill — `SKILL.md` flow
 
