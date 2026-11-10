@@ -28,8 +28,11 @@ For a news-based idea, "Why now" names the news item, its date and link instead 
 ## Where ideas come from
 
 1. Unused `reels` (`used: false`), best `ratio` first. Mix the niches; at most one idea per source reel.
+   **Skip winners that are off the user's niche** (compare with `about` in config.json) — a general business creator's
+   viral reel about engine oil is not an idea for an export channel. Say in one line how many you skipped.
+   A winner with no transcript and an empty caption can't be judged: skip it too.
 2. Unused `news` that fits the niche and audience.
-3. If that's thin, `pool` reels with `ratio` ≥ 1.3 (say they're smaller signals).
+3. If that's thin, `pool` reels with `ratio` ≥ 1.3 and on the niche (say they're smaller signals; `median` is the creator's usual).
 4. If there's nothing new, say so plainly and when the next scrape is due. Don't pad.
 
 ## Checks before showing it

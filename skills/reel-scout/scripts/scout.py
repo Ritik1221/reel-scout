@@ -19,6 +19,7 @@ import requests
 REEL_ACTOR = "apify~instagram-reel-scraper"
 USD_PER_REEL = 0.0026          # Apify reel scraper, pay per result
 USD_PER_NEWS_QUERY = 0.01      # Exa search with page text, roughly
+USD_PER_TRANSCRIPT = 0.01      # ElevenLabs Scribe, a reel of up to ~90 s
 KEEP_DAYS, HISTORY_DAYS, NEWS_DAYS, NEWS_LOOKBACK = 120, 90, 30, 8
 RULE = "Take the topic, angle or format. Never copy anyone's words, voice, footage or poems."
 DEFAULTS = {"days": 14, "per": 12, "min_ratio": 1.5, "min_views": 5000, "per_creator": 3,
@@ -160,8 +161,16 @@ def cmd_check_keys():
             d = None
         got["APIFY_TOKEN"] = (f"ok ({d.get('username')}, {(d.get('plan') or {}).get('id', '?')} plan)" if d
                               else "refused or unreachable")
-    for k in ("ELEVENLABS_API_KEY", "EXA_API_KEY"):
-        got[k] = "set" if env(k) else "missing"
+    el = env("ELEVENLABS_API_KEY")
+    if not el:
+        got["ELEVENLABS_API_KEY"] = "missing"
+    else:
+        try:
+            ok = requests.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": el}, timeout=30).status_code == 200
+        except requests.RequestException:
+            ok = False
+        got["ELEVENLABS_API_KEY"] = "ok" if ok else "refused or unreachable"
+    got["EXA_API_KEY"] = "set (checked on the first news search)" if env("EXA_API_KEY") else "missing"
     for k, v in got.items():
         print(f"{k}: {v}")
     return got
@@ -228,10 +237,12 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
         print(f"Dry run for '{cfg.get('name', d.name)}':")
         print(f"  creators: {len(niche_of)} — " + (f"scrape up to {s['per']} reels each from the last {s['days']} days, "
               f"≤ ${reels_usd:.2f} (cap ${s['max_usd']:.2f})" if scrape_now else f"not due (last scraped {last})"))
-        print(f"  transcripts: {'on (ElevenLabs, a few cents per reel)' if eleven else 'off'}")
+        n_tr = sum(cfg["slots"].values()) if eleven and scrape_now else 0
+        tr_usd = n_tr * USD_PER_TRANSCRIPT
+        print(f"  transcripts: up to {n_tr} reels, ≤ ${tr_usd:.2f} (ElevenLabs)" if eleven else "  transcripts: off")
         n = len(cfg["news_queries"])
         print(f"  news: " + (f"{n} searches, ≈ ${news_usd:.2f}" if exa else "off"))
-        print(f"  estimated total: ≈ ${reels_usd + news_usd:.2f}")
+        print(f"  estimated total: ≈ ${reels_usd + news_usd + tr_usd:.2f}")
         return None
     spent = 0.0
     if raw:
@@ -252,6 +263,11 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
     seen = {r["code"] for r in old.get("reels", [])}
     new = pick_new(rank(items, niche_of, history, s), seen, cfg["slots"])
     print(f"  {len(new)} new reels beat their creator's usual views by {s['min_ratio']}x+")
+    if items:
+        quiet = sorted(h for h in niche_of if len(history.get(h, {})) < 3)
+        if quiet:
+            print("  Too few reels to know their usual views yet (fewer than 3 in 90 days), so no winners from: "
+                  + ", ".join("@" + h for h in quiet) + ". Swap them for more active creators if this repeats.")
     if do_transcribe and new and not eleven:
         print("  No ELEVENLABS_API_KEY: winners keep captions only (no transcripts).")
     for w in new:
@@ -276,11 +292,11 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
     pool = {r["code"]: r for r in old.get("pool", []) if r.get("posted", "9") >= cutoff}
     for it in items:
         who = owner(it)
-        if who in niche_of and it.get("shortCode"):
+        if who in niche_of and it.get("shortCode") and views_of(it):
             med = statistics.median([v for v, _ in history.get(who, {}).values()] or [0])
             pool[it["shortCode"]] = {"creator": who, "niche": niche_of[who], "code": it["shortCode"], "url": it.get("url"),
                                      "posted": (it.get("timestamp") or "")[:10], "views": views_of(it),
-                                     "ratio": round(views_of(it) / med, 1) if med else None,
+                                     "median": int(med), "ratio": round(views_of(it) / med, 1) if med else None,
                                      "caption": (it.get("caption") or "")[:400]}
     pack = {"generated": today.isoformat(), "scraped": last, "rule": RULE,
             "reels": new + [r for r in old.get("reels", []) if r.get("found", "9") >= cutoff],

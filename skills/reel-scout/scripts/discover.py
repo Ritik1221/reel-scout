@@ -69,8 +69,9 @@ def main(argv=None):
         (d / "hashtags.raw.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
     rows = group(items)
     (d / "candidates.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("  Views below are of the hashtag reels found, not their usual views. Accounts found once may be one-off hits.")
     for r in rows[:25]:
-        print(f"  @{r['handle']:<24} {r['reels']} reels  median {r['median']:>9,}  best {r['best']:>9,}  "
+        print(f"  @{r['handle']:<24} {r['reels']} tag reels  views {r['median']:>9,}  best {r['best']:>9,}  "
               f"last {r['last_post']}  {r['sample'][:60]!r}")
     print(f"  {len(rows)} accounts → {d / 'candidates.json'}")
 

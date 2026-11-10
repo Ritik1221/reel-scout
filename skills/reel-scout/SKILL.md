@@ -43,9 +43,13 @@ List `~/reel-scout/*/config.json`.
 3. **Hashtags + news** — propose 6–8 hashtags and 0–8 news searches from the answers (see interview.md). Let the
    user edit.
 4. **Find creators** — `PY <base>/scripts/discover.py ~/reel-scout/<name> --hashtags a,b,c --dry-run` → tell the user the
-   cost → **ask** → run it without `--dry-run`. Show the top 25 from the output as a table (handle, reels found,
-   median views, best, last post, what it's about) and let the user pick 10–20. Add the creators they named in the
-   interview. Big general accounts they like only for style can go in a separate `inspiration` niche.
+   cost → **ask** → run it without `--dry-run`. Read `candidates.json` and first drop accounts that are clearly off
+   the niche or in another language (judge from `sample` and `hashtags`). Show the rest as a table (handle, tag reels
+   found, best views, last post, what it's about in a few words) and let the user pick 10–20. Say plainly: the views
+   are of the hashtag reels found, not the creator's usual views; an account found only once may be a one-off hit,
+   so prefer accounts found 2+ times, and creators who post at least weekly (a creator needs 3+ reels before the
+   scout knows their usual views). Add the creators they named in the interview. Big general accounts they like only
+   for style can go in a separate `inspiration` niche.
 5. **Write `~/reel-scout/<name>/config.json`:**
    ```json
    {
@@ -60,8 +64,11 @@ List `~/reel-scout/*/config.json`.
    ```
    Leave out an empty niche. If most picked creators have a median under 5,000 views, set `min_views` to about
    1,000 (small niches have small creators). Explain the config to the user in plain words, not as JSON.
-6. **First run** — `PY <base>/scripts/scout.py run ~/reel-scout/<name> --dry-run` → say the estimated cost → **ask** →
-   `PY <base>/scripts/scout.py run ~/reel-scout/<name> --force`.
+6. **First run** — `PY <base>/scripts/scout.py run ~/reel-scout/<name> --dry-run` → say the estimated cost (scrape,
+   transcripts, news) → **ask** → `PY <base>/scripts/scout.py run ~/reel-scout/<name> --force`. Keep transcripts on if
+   the budget allows: without them, winners whose caption says nothing ("Follow for more") can't be used. To save
+   money, add `--no-transcribe` and say what that costs in quality.
+   If the run lists creators with too few reels, tell the user and offer to swap them at the next setup.
 7. **Brief** — write it (below).
 8. **Optional weekly run** — offer it once, and say plainly that a scheduled run spends up to `max_usd` without
    asking (the only exception to "ask before spending"). macOS/Linux cron line — use absolute paths, cron has no

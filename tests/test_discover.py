@@ -32,3 +32,11 @@ def test_main_with_raw_writes_candidates(tmp_path, capsys):
     got = json.loads((tmp_path / "poetry" / "candidates.json").read_text())
     assert got[0]["handle"] == "steady"
     assert "@steady" in capsys.readouterr().out
+
+
+def test_print_says_views_are_of_tag_reels_not_usual(tmp_path, capsys):
+    raw = tmp_path / "h.json"
+    raw.write_text(json.dumps([tagged("steady", "b", 20000, "shayari")]))
+    discover.main([str(tmp_path / "p"), "--raw", str(raw)])
+    out = capsys.readouterr().out
+    assert "not their usual views" in out and "median " not in out

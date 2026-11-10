@@ -222,5 +222,39 @@ def test_check_keys_never_prints_keys(monkeypatch, capsys):
     monkeypatch.setattr(scout.requests, "get", lambda *a, **k: R())
     got = scout.cmd_check_keys()
     out = capsys.readouterr().out
-    assert got == {"APIFY_TOKEN": "ok (poet, FREE plan)", "ELEVENLABS_API_KEY": "missing", "EXA_API_KEY": "set"}
+    assert got == {"APIFY_TOKEN": "ok (poet, FREE plan)", "ELEVENLABS_API_KEY": "missing", "EXA_API_KEY": "set (checked on the first news search)"}
     assert "secret" not in out and "a@b.c" not in out
+
+
+def test_dry_run_prices_transcripts(tmp_path, no_network, monkeypatch, capsys):
+    d, _ = setup_scout(tmp_path, slots={"main": 4})
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "x")
+    scout.cmd_run(d, today=TODAY, dry_run=True)
+    out = capsys.readouterr().out
+    assert "transcripts: up to 4 reels" in out and "$0.04" in out
+
+
+def test_run_warns_about_quiet_creators(tmp_path, no_network, capsys):
+    d, raw = setup_scout(tmp_path)                      # bob has 1 reel, no stored history
+    scout.cmd_run(d, raw=raw, today=TODAY)
+    assert "@bob" in capsys.readouterr().out.split("Too few reels")[1]
+
+
+def test_pool_has_median_and_skips_zero_views(tmp_path, no_network):
+    d, raw = setup_scout(tmp_path)
+    raw.write_text(json.dumps([reel("alice", "WIN", 8000), reel("alice", "ZERO", 0)]))
+    pack = scout.cmd_run(d, raw=raw, today=TODAY)
+    assert {r["code"] for r in pack["pool"]} == {"WIN"}
+    assert pack["pool"][0]["median"] == 1000
+
+
+def test_check_keys_checks_elevenlabs(monkeypatch, capsys):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-secret")
+    class R:
+        status_code = 401
+        def json(self):
+            return {}
+    monkeypatch.setattr(scout.requests, "get", lambda *a, **k: R())
+    got = scout.cmd_check_keys()
+    assert got["ELEVENLABS_API_KEY"] == "refused or unreachable"
+    assert got["EXA_API_KEY"] == "missing"
