@@ -17,8 +17,9 @@ The rule, repeated in every brief: **Take the topic, angle or format. Never copy
 - User data lives in `~/reel-scout/` (or `$REEL_SCOUT_HOME`): `.env` for keys, one folder per scout
   (`~/reel-scout/<name>/config.json`, `topics.json`, `candidates.json`, `briefs/`).
   **Never write user data inside the skill folder.**
-- Run Python as `uv run --with requests python <script> ...` when `uv` exists; otherwise `python3 <script> ...`
-  after checking `python3 -c "import requests"` (if missing, offer `python3 -m pip install --user requests`).
+- Run Python as `uv run --no-project --with requests python <script> ...` when `uv` exists (`--no-project` keeps uv
+  away from any project in the current folder); otherwise `python3 <script> ...` after checking
+  `python3 -c "import requests"` (if missing, offer `python3 -m pip install --user requests`).
   Below, `PY` means whichever of the two works.
 
 ## Pick the mode
@@ -33,10 +34,12 @@ List `~/reel-scout/*/config.json`.
 1. **Interview** — follow `references/interview.md`, one question at a time, in the user's language. Keep it friendly
    and short; the user may not be technical.
 2. **Keys** — explain each key in one line (what it does, where to get it, cost; see interview.md). Only Apify is
-   required. Write them to `~/reel-scout/.env` as `NAME=value` lines, then `chmod 600 ~/reel-scout/.env`.
-   Never echo a key back or put it in a command line. Check Apify with a free call that reads the token from the file:
-   `set -a; . ~/reel-scout/.env; set +a; curl -s "https://api.apify.com/v2/users/me?token=$APIFY_TOKEN"` and report
-   only the username and plan (or that the token was refused).
+   required. If `~/reel-scout/.env` doesn't exist, create it with empty lines (`APIFY_TOKEN=`, `ELEVENLABS_API_KEY=`,
+   `EXA_API_KEY=`) and `chmod 600` it. Then ask the user to open that file and paste each key after its `=`
+   themselves (e.g. `open -e ~/reel-scout/.env` on macOS, `notepad` on Windows). If they paste a key into the chat
+   instead, put it in with an Edit of that one line — never with `echo`, a heredoc or any command line, and never
+   repeat it back. Keep keys already in the file. Then check: `PY <base>/scripts/scout.py check-keys` (free; prints
+   only ok / missing / refused and the Apify username, never a key).
 3. **Hashtags + news** — propose 6–8 hashtags and 0–8 news searches from the answers (see interview.md). Let the
    user edit.
 4. **Find creators** — `PY <base>/scripts/discover.py ~/reel-scout/<name> --hashtags a,b,c --dry-run` → tell the user the
@@ -60,8 +63,11 @@ List `~/reel-scout/*/config.json`.
 6. **First run** — `PY <base>/scripts/scout.py run ~/reel-scout/<name> --dry-run` → say the estimated cost → **ask** →
    `PY <base>/scripts/scout.py run ~/reel-scout/<name> --force`.
 7. **Brief** — write it (below).
-8. **Optional weekly run** — offer it once. Claude Code's `/schedule` skill, or a cron line such as
-   `0 18 * * 0 <PY> <base>/scripts/scout.py run ~/reel-scout/<name>` (the scrape only happens when it's due).
+8. **Optional weekly run** — offer it once, and say plainly that a scheduled run spends up to `max_usd` without
+   asking (the only exception to "ask before spending"). macOS/Linux cron line — use absolute paths, cron has no
+   PATH: `0 18 * * 0 <abs path from command -v uv> run --no-project --with requests python <base>/scripts/scout.py run
+   ~/reel-scout/<name> >> ~/reel-scout/<name>/cron.log 2>&1` (or `<abs python3> <base>/scripts/scout.py ...`).
+   Briefs are still written by Claude the next time the user says "run my scout" (it then sees the new data).
 
 ## Run (every week)
 

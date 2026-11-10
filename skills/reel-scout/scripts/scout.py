@@ -3,6 +3,7 @@
   python scout.py run <scout-dir> [--force] [--raw FILE] [--no-transcribe] [--no-news] [--dry-run]
   python scout.py status <scout-dir>
   python scout.py mark-used <scout-dir> CODE_OR_URL ...
+  python scout.py check-keys                  which keys are set (never prints them)
 
 <scout-dir> holds config.json (written by the reel-scout skill) and the output topics.json.
 Keys come from the environment or ~/reel-scout/.env (REEL_SCOUT_HOME changes the folder):
@@ -34,7 +35,7 @@ def env(key: str) -> str | None:
         return os.environ[key]
     f = home() / ".env"
     if f.exists():
-        for line in f.read_text().splitlines():
+        for line in f.read_text(encoding="utf-8").splitlines():
             k, _, v = line.partition("=")
             v = v.strip().strip('"').strip("'")
             if k.strip() == key and v:
@@ -55,7 +56,7 @@ def load_config(scout_dir) -> dict:
     if not p.exists():
         raise SystemExit(f"No config at {p}. Run the reel-scout skill to set this scout up.")
     try:
-        cfg = json.loads(p.read_text())
+        cfg = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise SystemExit(f"{p} is not valid JSON: {e}")
     niches = {n: [h for h in map(norm_handle, hs) if h] for n, hs in (cfg.get("niches") or {}).items()}
@@ -121,20 +122,49 @@ def apify_run(actor, payload, max_usd, usd_per_item):
     tok = env("APIFY_TOKEN")
     if not tok:
         raise SystemExit("APIFY_TOKEN is missing: add it to ~/reel-scout/.env (see the README).")
-    base = "https://api.apify.com/v2"
-    r = requests.post(f"{base}/acts/{actor}/runs", timeout=60, json=payload,
-                      params={"token": tok, "maxTotalChargeUsd": max_usd, "maxItems": max(1, int(max_usd / usd_per_item))})
-    if r.status_code >= 400:
-        raise SystemExit(f"Apify refused the run ({r.status_code}): {r.text[:300]}")
-    run = r.json()["data"]
+    base, auth = "https://api.apify.com/v2", {"Authorization": f"Bearer {tok}"}   # header, so errors never show the token
+
+    def call(method, url, **kw):
+        try:
+            r = method(url, headers=auth, **kw)
+        except requests.RequestException as e:
+            raise SystemExit(f"Couldn't reach Apify ({type(e).__name__}). Check the internet connection and try again.")
+        if r.status_code >= 400:
+            raise SystemExit(f"Apify refused the request ({r.status_code}): {r.text[:300]}")
+        return r.json()
+
+    run = call(requests.post, f"{base}/acts/{actor}/runs", timeout=60, json=payload,
+               params={"maxTotalChargeUsd": max_usd, "maxItems": max(1, int(max_usd / usd_per_item))})["data"]
     while run["status"] in ("READY", "RUNNING"):
         time.sleep(10)
-        run = requests.get(f"{base}/actor-runs/{run['id']}", params={"token": tok}, timeout=60).json()["data"]
+        run = call(requests.get, f"{base}/actor-runs/{run['id']}", timeout=60)["data"]
     if run["status"] != "SUCCEEDED":
         raise SystemExit(f"Apify run {run['id']} ended {run['status']}; see https://console.apify.com/actors/runs/{run['id']}")
-    items = requests.get(f"{base}/datasets/{run['defaultDatasetId']}/items", params={"token": tok, "clean": "true"},
-                         timeout=120).json()
-    return items, float(run.get("usageTotalUsd") or 0)
+    items = call(requests.get, f"{base}/datasets/{run['defaultDatasetId']}/items", params={"clean": "true"}, timeout=120)
+    if not isinstance(items, list):
+        raise SystemExit(f"Apify returned something unexpected for run {run['id']}.")
+    return [i for i in items if isinstance(i, dict)], float(run.get("usageTotalUsd") or 0)
+
+
+def cmd_check_keys():
+    """Which keys are set; Apify checked with a free call. Never prints a key."""
+    got = {}
+    tok = env("APIFY_TOKEN")
+    if not tok:
+        got["APIFY_TOKEN"] = "missing"
+    else:
+        try:
+            r = requests.get("https://api.apify.com/v2/users/me", headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+            d = (r.json().get("data") or {}) if r.status_code == 200 else None
+        except (requests.RequestException, ValueError):
+            d = None
+        got["APIFY_TOKEN"] = (f"ok ({d.get('username')}, {(d.get('plan') or {}).get('id', '?')} plan)" if d
+                              else "refused or unreachable")
+    for k in ("ELEVENLABS_API_KEY", "EXA_API_KEY"):
+        got[k] = "set" if env(k) else "missing"
+    for k, v in got.items():
+        print(f"{k}: {v}")
+    return got
 
 
 def news_scan(queries, key, today, days=NEWS_LOOKBACK, per=5):
@@ -173,11 +203,11 @@ def transcribe(url, key):
 
 def _load(scout_dir):
     p = pathlib.Path(scout_dir) / "topics.json"
-    return json.loads(p.read_text()) if p.exists() else {"reels": [], "news": [], "views": {}, "pool": []}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"reels": [], "news": [], "views": {}, "pool": []}
 
 
 def _save(scout_dir, pack):
-    (pathlib.Path(scout_dir) / "topics.json").write_text(json.dumps(pack, ensure_ascii=False, indent=1))
+    (pathlib.Path(scout_dir) / "topics.json").write_text(json.dumps(pack, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def _due(last, s, today):
@@ -205,18 +235,19 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
         return None
     spent = 0.0
     if raw:
-        items = json.loads(pathlib.Path(raw).read_text())
+        items = json.loads(pathlib.Path(raw).read_text(encoding="utf-8"))
     elif scrape_now:
         items, usd = apify_run(REEL_ACTOR, {"username": list(niche_of), "resultsLimit": s["per"],
                                             "onlyPostsNewerThan": f"{s['days']} days", "skipPinnedPosts": True},
                                s["max_usd"], USD_PER_REEL)
         spent += usd
         print(f"  apify: {len(items)} reels, ${usd:.2f}")
-        (d / "topics.raw.json").write_text(json.dumps(items, ensure_ascii=False))
+        (d / "topics.raw.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
         last = today.isoformat()
     else:
         print(f"  creators: last scraped {last}; next scrape after {s['scrape_every_days']} days (saves Apify credit). News only.")
         items = []
+    items = list({it.get("shortCode") or id(it): it for it in items}.values())   # same reel twice in one scrape
     history = remember(old.get("views", {}), items, niche_of, today)
     seen = {r["code"] for r in old.get("reels", [])}
     new = pick_new(rank(items, niche_of, history, s), seen, cfg["slots"])
@@ -290,6 +321,15 @@ def cmd_mark_used(scout_dir, refs):
     return missing
 
 
+def utf8_console():
+    """Windows consoles/pipes default to cp1252: never crash on Hindi text or symbols like ≈."""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -301,11 +341,15 @@ def main(argv=None):
     r.add_argument("--no-news", action="store_true")
     r.add_argument("--dry-run", action="store_true")
     sub.add_parser("status").add_argument("scout_dir")
+    sub.add_parser("check-keys")
     m = sub.add_parser("mark-used")
     m.add_argument("scout_dir")
     m.add_argument("refs", nargs="+")
     a = p.parse_args(argv)
-    if a.cmd == "run":
+    utf8_console()
+    if a.cmd == "check-keys":
+        cmd_check_keys()
+    elif a.cmd == "run":
         cmd_run(a.scout_dir, a.force, a.raw, not a.no_transcribe, not a.no_news, a.dry_run)
     elif a.cmd == "status":
         cmd_status(a.scout_dir)

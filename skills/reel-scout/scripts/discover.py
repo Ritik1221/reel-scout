@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse, json, pathlib, statistics, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from scout import apify_run, norm_handle, owner, views_of  # noqa: E402
+from scout import apify_run, norm_handle, owner, utf8_console, views_of  # noqa: E402
 
 HASHTAG_ACTOR = "apify~instagram-hashtag-scraper"
 USD_PER_ITEM = 0.0026     # cap math; measured ≈ $0.0019
@@ -50,11 +50,12 @@ def main(argv=None):
     p.add_argument("--raw")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args(argv)
+    utf8_console()
     d = pathlib.Path(a.scout_dir)
     d.mkdir(parents=True, exist_ok=True)
     tags = clean_tags(a.hashtags)
     if a.raw:
-        items = json.loads(pathlib.Path(a.raw).read_text())
+        items = json.loads(pathlib.Path(a.raw).read_text(encoding="utf-8"))
     else:
         if not tags:
             raise SystemExit("Give --hashtags, e.g. --hashtags shayari,hindipoetry")
@@ -65,9 +66,9 @@ def main(argv=None):
         items, usd = apify_run(HASHTAG_ACTOR, {"hashtags": tags, "resultsType": "reels", "resultsLimit": a.per},
                                a.max_usd, USD_PER_ITEM)
         print(f"  apify: {len(items)} reels, ${usd:.2f}")
-        (d / "hashtags.raw.json").write_text(json.dumps(items, ensure_ascii=False))
+        (d / "hashtags.raw.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
     rows = group(items)
-    (d / "candidates.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1))
+    (d / "candidates.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     for r in rows[:25]:
         print(f"  @{r['handle']:<24} {r['reels']} reels  median {r['median']:>9,}  best {r['best']:>9,}  "
               f"last {r['last_post']}  {r['sample'][:60]!r}")

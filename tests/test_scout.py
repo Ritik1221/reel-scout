@@ -150,7 +150,7 @@ def test_apify_rejected_token(monkeypatch):
     class R:
         status_code, text = 401, '{"error":{"type":"user-or-token-not-found"}}'
     monkeypatch.setattr(scout.requests, "post", lambda *a, **k: R())
-    with pytest.raises(SystemExit, match="Apify refused the run \\(401\\)"):
+    with pytest.raises(SystemExit, match="Apify refused the request \\(401\\)"):
         scout.apify_run(scout.REEL_ACTOR, {}, 1.0, scout.USD_PER_REEL)
 
 
@@ -162,3 +162,65 @@ def test_status_and_mark_used(tmp_path, no_network):
     missing = scout.cmd_mark_used(d, ["https://www.instagram.com/p/WIN/", "NOPE"])
     assert missing == ["NOPE"]
     assert scout.cmd_status(d, today=TODAY)["unused_reels"] == 0
+
+
+def test_scripts_always_pass_utf8():
+    """Windows defaults to cp1252: every file read/write must name utf-8 (Hindi captions, config 'about')."""
+    import pathlib, re
+    for f in pathlib.Path(scout.__file__).parent.glob("*.py"):
+        for m in re.finditer(r"\.(read_text|write_text)\(([^()]*(\([^()]*\))?[^()]*)\)", f.read_text(encoding="utf-8")):
+            assert 'encoding="utf-8"' in m.group(2), f"{f.name}: {m.group(0)[:60]}"
+
+
+def test_dry_run_survives_a_cp1252_console(tmp_path):
+    import os, subprocess, sys
+    d, _ = setup_scout(tmp_path, news_queries=["a"])
+    envs = {**os.environ, "PYTHONIOENCODING": "cp1252", "REEL_SCOUT_HOME": str(tmp_path / "home"), "EXA_API_KEY": "x"}
+    r = subprocess.run([sys.executable, scout.__file__, "run", str(d), "--dry-run"], capture_output=True, env=envs)
+    assert r.returncode == 0, r.stderr.decode(errors="replace")[-300:]
+
+
+def test_same_reel_twice_in_one_scrape_is_saved_once(tmp_path, no_network):
+    d, raw = setup_scout(tmp_path)
+    raw.write_text(json.dumps([reel("alice", "WIN", 8000), reel("alice", "WIN", 8000)]))
+    pack = scout.cmd_run(d, raw=raw, today=TODAY)
+    assert [r["code"] for r in pack["reels"]] == ["WIN"]
+
+
+def test_apify_token_goes_in_header_not_url(monkeypatch):
+    monkeypatch.setenv("APIFY_TOKEN", "secret-tok")
+    seen = {}
+    class R:
+        status_code, text = 401, "nope"
+    def post(url, **k):
+        seen.update(url=url, **k)
+        return R()
+    monkeypatch.setattr(scout.requests, "post", post)
+    with pytest.raises(SystemExit):
+        scout.apify_run(scout.REEL_ACTOR, {}, 1.0, scout.USD_PER_REEL)
+    assert "secret-tok" not in seen["url"] + json.dumps(seen.get("params", {}))
+    assert seen["headers"]["Authorization"] == "Bearer secret-tok"
+
+
+def test_apify_network_error_is_plain_and_hides_token(monkeypatch):
+    monkeypatch.setenv("APIFY_TOKEN", "secret-tok")
+    def post(*a, **k):
+        raise scout.requests.ConnectionError("https://api.apify.com/v2/acts/x/runs?token=secret-tok refused")
+    monkeypatch.setattr(scout.requests, "post", post)
+    with pytest.raises(SystemExit) as e:
+        scout.apify_run(scout.REEL_ACTOR, {}, 1.0, scout.USD_PER_REEL)
+    assert "Couldn't reach Apify" in str(e.value) and "secret-tok" not in str(e.value)
+
+
+def test_check_keys_never_prints_keys(monkeypatch, capsys):
+    monkeypatch.setenv("APIFY_TOKEN", "secret-tok")
+    monkeypatch.setenv("EXA_API_KEY", "exa-secret")
+    class R:
+        status_code = 200
+        def json(self):
+            return {"data": {"username": "poet", "plan": {"id": "FREE"}, "email": "a@b.c"}}
+    monkeypatch.setattr(scout.requests, "get", lambda *a, **k: R())
+    got = scout.cmd_check_keys()
+    out = capsys.readouterr().out
+    assert got == {"APIFY_TOKEN": "ok (poet, FREE plan)", "ELEVENLABS_API_KEY": "missing", "EXA_API_KEY": "set"}
+    assert "secret" not in out and "a@b.c" not in out

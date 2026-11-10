@@ -33,7 +33,7 @@ Every week after that, say **"run my scout"**.
 | `ELEVENLABS_API_KEY` | No | Transcribes the winning reels | elevenlabs.io → API keys |
 | `EXA_API_KEY` | No | This week's news in your niche | exa.ai → API keys |
 
-The skill saves them to `~/reel-scout/.env` on your computer (only you can read it).
+You paste them into `~/reel-scout/.env` on your computer; they are never shown in the chat.
 
 ## Cost (on your own accounts)
 
@@ -42,7 +42,8 @@ The skill saves them to `~/reel-scout/.env` on your computer (only you can read 
   cost a few cents.
 - Apify's free plan gives $5 credit a month, which is plenty.
 
-It always tells you the cost and asks before spending.
+It always tells you the cost and asks before spending. (If you turn on the optional weekly run, that run spends up to
+the cap without asking.)
 
 ## Privacy
 
