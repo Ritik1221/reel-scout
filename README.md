@@ -16,7 +16,7 @@ A plugin for [Claude Code](https://claude.com/claude-code). You keep your own ke
 In Claude Code:
 
 ```
-/plugin marketplace add <github-user>/reel-scout
+/plugin marketplace add Ritik1221/reel-scout
 /plugin install reel-scout@reel-scout
 ```
 
