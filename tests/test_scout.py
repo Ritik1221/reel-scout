@@ -74,3 +74,91 @@ def test_pick_new_respects_slots_and_seen():
     ws = [{"code": c, "niche": n} for c, n in [("a", "main"), ("b", "main"), ("c", "main"), ("d", "insp")]]
     got = scout.pick_new(ws, {"a"}, {"main": 1, "insp": 5})
     assert [w["code"] for w in got] == ["b", "d"]
+
+
+def setup_scout(tmp_path, **over):
+    d = write_cfg(tmp_path / "poetry", settings={"min_views": 0}, **over)
+    hist = {"alice": {f"h{i}": [1000, "2026-11-01"] for i in range(5)}}
+    (d / "topics.json").write_text(json.dumps({"scraped": "2026-10-01", "views": hist, "reels": [], "news": [], "pool": []}))
+    raw = tmp_path / "raw.json"
+    raw.write_text(json.dumps([reel("alice", "WIN", 8000, caption="दिल की बात"), reel("alice", "MEH", 900), reel("bob", "B1", 50)]))
+    return d, raw
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("network call")
+    monkeypatch.setattr(scout.requests, "post", boom)
+    monkeypatch.setattr(scout.requests, "get", boom)
+
+
+def test_run_with_raw_writes_pack_and_skips_missing_keys(tmp_path, no_network, capsys):
+    d, raw = setup_scout(tmp_path)
+    pack = scout.cmd_run(d, raw=raw, today=TODAY)
+    out = capsys.readouterr().out
+    assert "No ELEVENLABS_API_KEY" in out
+    assert [r["code"] for r in pack["reels"]] == ["WIN"]
+    assert pack["reels"][0]["used"] is False and "audio" not in pack["reels"][0]
+    assert pack["rule"] == scout.RULE and pack["scraped"] == "2026-10-01"
+    text = (d / "topics.json").read_text()
+    assert "दिल की बात" in text                          # readable UTF-8
+    assert {r["code"] for r in pack["pool"]} == {"WIN", "MEH", "B1"}
+    again = scout.cmd_run(d, raw=raw, today=TODAY)       # same scrape twice: no duplicates
+    assert [r["code"] for r in again["reels"]] == ["WIN"]
+    assert "WIN" in again["views"]["alice"]
+
+
+def test_run_not_due_does_not_scrape(tmp_path, monkeypatch):
+    d, _ = setup_scout(tmp_path)
+    t = json.loads((d / "topics.json").read_text()); t["scraped"] = "2026-11-05"
+    (d / "topics.json").write_text(json.dumps(t))
+    monkeypatch.setattr(scout, "apify_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("scraped")))
+    pack = scout.cmd_run(d, today=TODAY, do_news=False)
+    assert pack["reels"] == [] and pack["scraped"] == "2026-11-05"
+
+
+def test_run_due_scrapes_with_caps(tmp_path, monkeypatch):
+    d, _ = setup_scout(tmp_path)
+    seen = {}
+    def fake(actor, payload, max_usd, usd_per_item):
+        seen.update(actor=actor, payload=payload, max_usd=max_usd)
+        return [reel("alice", "NEW", 5000)], 0.03
+    monkeypatch.setattr(scout, "apify_run", fake)
+    pack = scout.cmd_run(d, today=TODAY, do_transcribe=False, do_news=False)
+    assert seen["actor"] == scout.REEL_ACTOR and seen["max_usd"] == 1.0
+    assert seen["payload"]["username"] == ["alice", "bob"] and seen["payload"]["onlyPostsNewerThan"] == "14 days"
+    assert pack["scraped"] == "2026-11-11" and (d / "topics.raw.json").exists()
+
+
+def test_dry_run_spends_and_writes_nothing(tmp_path, no_network, capsys):
+    d, _ = setup_scout(tmp_path, news_queries=["a", "b"])
+    before = (d / "topics.json").read_text()
+    assert scout.cmd_run(d, today=TODAY, dry_run=True) is None
+    out = capsys.readouterr().out
+    assert "Dry run" in out and "$" in out
+    assert (d / "topics.json").read_text() == before
+
+
+def test_apify_without_token_is_plain_message():
+    with pytest.raises(SystemExit, match="APIFY_TOKEN is missing"):
+        scout.apify_run(scout.REEL_ACTOR, {}, 1.0, scout.USD_PER_REEL)
+
+
+def test_apify_rejected_token(monkeypatch):
+    monkeypatch.setenv("APIFY_TOKEN", "bad")
+    class R:
+        status_code, text = 401, '{"error":{"type":"user-or-token-not-found"}}'
+    monkeypatch.setattr(scout.requests, "post", lambda *a, **k: R())
+    with pytest.raises(SystemExit, match="Apify refused the run \\(401\\)"):
+        scout.apify_run(scout.REEL_ACTOR, {}, 1.0, scout.USD_PER_REEL)
+
+
+def test_status_and_mark_used(tmp_path, no_network):
+    d, raw = setup_scout(tmp_path)
+    scout.cmd_run(d, raw=raw, today=TODAY)
+    st = scout.cmd_status(d, today=TODAY)
+    assert st["unused_reels"] == 1 and st["next_scrape"] == "due now"
+    missing = scout.cmd_mark_used(d, ["https://www.instagram.com/p/WIN/", "NOPE"])
+    assert missing == ["NOPE"]
+    assert scout.cmd_status(d, today=TODAY)["unused_reels"] == 0
