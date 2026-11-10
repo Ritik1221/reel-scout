@@ -20,7 +20,7 @@ In Claude Code:
 /plugin install reel-scout@reel-scout
 ```
 
-Then say **"set up my reel scout"** (or `/reel-scout`). It asks a few questions, helps you add your keys, finds
+Then say **"set up my reel scout"** (or type `/reel-scout:reel-scout`). It asks a few questions, helps you add your keys, finds
 creators, and runs the first scout.
 
 Every week after that, say **"run my scout"**.
@@ -37,9 +37,9 @@ You paste them into `~/reel-scout/.env` on your computer; they are never shown i
 
 ## Cost (on your own accounts)
 
-- Setup: one hashtag scan, about $0.60.
-- Each scrape: about $0.30–1.00 (capped at $1 by default). Creators are scraped every 2 weeks at most; news runs
-  cost a few cents.
+- Setup: one hashtag scan (about $0.60) plus a check of up to 25 shortlisted creators (about $0.07).
+- Each scrape: about $0.30–1.00 (capped at $1 by default), plus about $0.01 per transcribed reel. Creators are
+  scraped every 2 weeks at most; news runs cost a few cents.
 - Apify's free plan gives $5 credit a month, which is plenty.
 
 It always tells you the cost and asks before spending. (If you turn on the optional weekly run, that run spends up to

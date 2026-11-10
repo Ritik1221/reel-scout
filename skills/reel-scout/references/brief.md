@@ -1,7 +1,7 @@
 # Weekly brief
 
-Read `~/reel-scout/<name>/topics.json` and `config.json` (about, language, audience, goal). Write in the user's
-language. Keep it short.
+Read `~/reel-scout/<name>/topics.json` and `config.json` (about, language, audience, goal). Write the brief in the
+language the user chats in; write the hooks in the language of their reels (`language` in config). Keep it short.
 
 ## Format
 
@@ -31,6 +31,10 @@ For a news-based idea, "Why now" names the news item, its date and link instead 
    **Skip winners that are off the user's niche** (compare with `about` in config.json) — a general business creator's
    viral reel about engine oil is not an idea for an export channel. Say in one line how many you skipped.
    A winner with no transcript and an empty caption can't be judged: skip it too.
+   Rank solid winners first. Two flags lower a winner, and the brief must say so in "Why now":
+   - `fragile: true` — the creator's usual views are tiny (`median`), so a big ratio is one lucky hit, not a trend.
+   - `from_discovery: true` — the setup scan already found this reel (it's why the creator was picked), so it isn't
+     new this week. Fine to use on the first brief; say it's a proven past hit.
 2. Unused `news` that fits the niche and audience.
 3. If that's thin, `pool` reels with `ratio` ≥ 1.3 and on the niche (say they're smaller signals; `median` is the creator's usual).
 4. If there's nothing new, say so plainly and when the next scrape is due. Don't pad.

@@ -19,11 +19,12 @@ import requests
 REEL_ACTOR = "apify~instagram-reel-scraper"
 USD_PER_REEL = 0.0026          # Apify reel scraper, pay per result
 USD_PER_NEWS_QUERY = 0.01      # Exa search with page text, roughly
-USD_PER_TRANSCRIPT = 0.01      # ElevenLabs Scribe, a reel of up to ~90 s
+USD_PER_TRANSCRIPT = 0.01      # ElevenLabs Scribe, a reel of up to ~90 s (dry-run estimate)
+USD_PER_AUDIO_MIN = 0.007      # ElevenLabs Scribe, roughly, per minute of audio
 KEEP_DAYS, HISTORY_DAYS, NEWS_DAYS, NEWS_LOOKBACK = 120, 90, 30, 8
 RULE = "Take the topic, angle or format. Never copy anyone's words, voice, footage or poems."
 DEFAULTS = {"days": 14, "per": 12, "min_ratio": 1.5, "min_views": 5000, "per_creator": 3,
-            "scrape_every_days": 13, "max_usd": 1.0}
+            "scrape_every_days": 13, "max_usd": 1.0, "min_usual_views": 1000}
 
 
 def home() -> pathlib.Path:
@@ -161,15 +162,8 @@ def cmd_check_keys():
             d = None
         got["APIFY_TOKEN"] = (f"ok ({d.get('username')}, {(d.get('plan') or {}).get('id', '?')} plan)" if d
                               else "refused or unreachable")
-    el = env("ELEVENLABS_API_KEY")
-    if not el:
-        got["ELEVENLABS_API_KEY"] = "missing"
-    else:
-        try:
-            ok = requests.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": el}, timeout=30).status_code == 200
-        except requests.RequestException:
-            ok = False
-        got["ELEVENLABS_API_KEY"] = "ok" if ok else "refused or unreachable"
+    # ElevenLabs keys can be scoped to speech-to-text only (no account read), so check them on first use instead
+    got["ELEVENLABS_API_KEY"] = "set (checked on the first transcript)" if env("ELEVENLABS_API_KEY") else "missing"
     got["EXA_API_KEY"] = "set (checked on the first news search)" if env("EXA_API_KEY") else "missing"
     for k, v in got.items():
         print(f"{k}: {v}")
@@ -270,14 +264,26 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
                   + ", ".join("@" + h for h in quiet) + ". Swap them for more active creators if this repeats.")
     if do_transcribe and new and not eleven:
         print("  No ELEVENLABS_API_KEY: winners keep captions only (no transcripts).")
+    disc = d / "hashtags.raw.json"       # reels the setup scan already found (why the creator was picked)
+    disc = {i.get("shortCode") for i in json.loads(disc.read_text(encoding="utf-8"))} if disc.exists() else set()
+    done, failed, secs = 0, [], 0.0
     for w in new:
         audio = w.pop("audio", None)
+        w["from_discovery"] = w["code"] in disc
+        w["fragile"] = w["median"] < s["min_usual_views"]      # tiny usual views: one lucky hit, not a trend
         if eleven and audio:
             try:
                 w["transcript"], w["language"] = transcribe(audio, eleven)
+                done, secs = done + 1, secs + (w.get("seconds") or 60)
             except Exception as e:      # a missing transcript shouldn't lose the topic
                 w["transcript"], w["error"] = "", str(e)[:200]
+                failed.append(w["error"])
         w["found"], w["used"] = today.isoformat(), False
+    if done or failed:
+        tr_usd = secs / 60 * USD_PER_AUDIO_MIN
+        spent += tr_usd
+        print(f"  transcripts: {done} done" + (f", {len(failed)} failed ({failed[0][:80]})" if failed else "")
+              + f", ≈ ${tr_usd:.3f}")
     news = []
     if do_news and cfg["news_queries"] and not exa:
         print("  No EXA_API_KEY: news skipped.")
@@ -289,10 +295,11 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
         print(f"  news: {len(news)} new items, ${usd:.3f}")
     cutoff = (today - dt.timedelta(days=KEEP_DAYS)).isoformat()
     ncut = (today - dt.timedelta(days=NEWS_DAYS)).isoformat()
-    pool = {r["code"]: r for r in old.get("pool", []) if r.get("posted", "9") >= cutoff}
+    winners = {r["code"] for r in new} | seen
+    pool = {r["code"]: r for r in old.get("pool", []) if r.get("posted", "9") >= cutoff and r["code"] not in winners}
     for it in items:
         who = owner(it)
-        if who in niche_of and it.get("shortCode") and views_of(it):
+        if who in niche_of and it.get("shortCode") and views_of(it) and it["shortCode"] not in winners:
             med = statistics.median([v for v, _ in history.get(who, {}).values()] or [0])
             pool[it["shortCode"]] = {"creator": who, "niche": niche_of[who], "code": it["shortCode"], "url": it.get("url"),
                                      "posted": (it.get("timestamp") or "")[:10], "views": views_of(it),
@@ -306,7 +313,7 @@ def cmd_run(scout_dir, force=False, raw=None, do_transcribe=True, do_news=True, 
     _save(d, pack)
     for w in new:
         print(f"  {w['ratio']}x  {w['views']:>9,}  @{w['creator']:<20} {w['caption'][:70]!r}")
-    print(f"  spent: ${spent:.2f} (plus ElevenLabs minutes if transcripts ran)")
+    print(f"  spent: ≈ ${spent:.2f}")
     return pack
 
 

@@ -1,6 +1,6 @@
 ---
 name: reel-scout
-description: Set up and run your own Instagram reel scout for any niche (poetry, cooking, fitness, business...). Use when someone says "set up a scout", "/reel-scout", "find what's working in my niche", "what should I post this week", "run my scout", or wants trending reel ideas from creators like them. Interviews the user, finds creators to watch, scores reels against each creator's usual views, and writes a weekly 5-idea brief.
+description: Set up and run your own Instagram reel scout for any niche (poetry, cooking, fitness, business...). Use when someone says "set up a scout", "/reel-scout:reel-scout", "find what's working in my niche", "what should I post this week", "run my scout", or wants trending reel ideas from creators like them. Interviews the user, finds creators to watch, scores reels against each creator's usual views, and writes a weekly 5-idea brief.
 ---
 
 # Reel Scout
@@ -31,25 +31,30 @@ List `~/reel-scout/*/config.json`.
 
 ## Setup (first time)
 
-1. **Interview** — follow `references/interview.md`, one question at a time, in the user's language. Keep it friendly
-   and short; the user may not be technical.
+1. **Interview** — follow `references/interview.md`, one question at a time, in the language the user chats in. Keep
+   it friendly and short; the user may not be technical. Then create the scout folder: `mkdir -p ~/reel-scout/<name>`.
 2. **Keys** — explain each key in one line (what it does, where to get it, cost; see interview.md). Only Apify is
    required. If `~/reel-scout/.env` doesn't exist, create it with empty lines (`APIFY_TOKEN=`, `ELEVENLABS_API_KEY=`,
    `EXA_API_KEY=`) and `chmod 600` it. Then ask the user to open that file and paste each key after its `=`
    themselves (e.g. `open -e ~/reel-scout/.env` on macOS, `notepad` on Windows). If they paste a key into the chat
    instead, put it in with an Edit of that one line — never with `echo`, a heredoc or any command line, and never
-   repeat it back. Keep keys already in the file. Then check: `PY <base>/scripts/scout.py check-keys` (free; prints
-   only ok / missing / refused and the Apify username, never a key).
+   repeat it back. Keep keys already in the file. Then check: `PY <base>/scripts/scout.py check-keys` (free; never
+   prints a key). Apify is checked live; ElevenLabs and Exa show "set" and are checked on first use — the run
+   reports if they fail.
 3. **Hashtags + news** — propose 6–8 hashtags and 0–8 news searches from the answers (see interview.md). Let the
    user edit.
-4. **Find creators** — `PY <base>/scripts/discover.py ~/reel-scout/<name> --hashtags a,b,c --dry-run` → tell the user the
-   cost → **ask** → run it without `--dry-run`. Read `candidates.json` and first drop accounts that are clearly off
-   the niche or in another language (judge from `sample` and `hashtags`). Show the rest as a table (handle, tag reels
-   found, best views, last post, what it's about in a few words) and let the user pick 10–20. Say plainly: the views
-   are of the hashtag reels found, not the creator's usual views; an account found only once may be a one-off hit,
-   so prefer accounts found 2+ times, and creators who post at least weekly (a creator needs 3+ reels before the
-   scout knows their usual views). Add the creators they named in the interview. Big general accounts they like only
-   for style can go in a separate `inspiration` niche.
+4. **Find creators** — two paid steps, each with a dry-run first, the cost said, and the user's OK:
+   a. **Scan hashtags:** `PY <base>/scripts/discover.py ~/reel-scout/<name> --hashtags a,b,c --dry-run`, then without
+      `--dry-run`. Keep the default 40 reels per hashtag: fewer and almost every account shows up only once.
+      Read `candidates.json`, drop accounts clearly off the niche or in another language (judge from `sample` and
+      `hashtags`), and shortlist up to 25 (the views shown are of the hashtag reels found, not the creator's usual).
+      Add the creators the user named in the interview.
+   b. **Check the shortlist:** `PY <base>/scripts/discover.py ~/reel-scout/<name> --check h1,h2,... --dry-run` (about
+      $0.07 for 25), then without `--dry-run`. It shows followers, posts in the last 14 days, usual likes and flags:
+      `QUIET` (under 3 posts in 14 days — the scout can't score them) and `REPOST?` (bio suggests reposted content).
+   Show the user one table (handle, followers, posts/14d, usual likes, flags, what it's about) and let them pick
+   10–20. Leave out QUIET and private accounts and, unless the user wants them, REPOST? pages. Big general accounts
+   they like only for style can go in a separate `inspiration` niche.
 5. **Write `~/reel-scout/<name>/config.json`:**
    ```json
    {
@@ -59,15 +64,17 @@ List `~/reel-scout/*/config.json`.
      "slots": {"main": 8, "inspiration": 2},
      "news_queries": ["..."], "hashtags": ["..."],
      "settings": {"days": 14, "per": 12, "min_ratio": 1.5, "min_views": 5000, "per_creator": 3,
-                  "scrape_every_days": 13, "max_usd": 1.0}
+                  "scrape_every_days": 13, "max_usd": 1.0, "min_usual_views": 1000}
    }
    ```
-   Leave out an empty niche. If most picked creators have a median under 5,000 views, set `min_views` to about
-   1,000 (small niches have small creators). Explain the config to the user in plain words, not as JSON.
+   Leave out an empty niche. If most picked creators have under ~20,000 followers or usual likes under ~300 (from
+   `profiles.json`), set `min_views` to about 1,000 (small niches have small creators). `min_usual_views`: winners from creators whose
+   usual views are below it are marked `fragile` (one lucky hit, not a trend). Explain the config to the user in plain words, not as JSON.
 6. **First run** — `PY <base>/scripts/scout.py run ~/reel-scout/<name> --dry-run` → say the estimated cost (scrape,
    transcripts, news) → **ask** → `PY <base>/scripts/scout.py run ~/reel-scout/<name> --force`. Keep transcripts on if
    the budget allows: without them, winners whose caption says nothing ("Follow for more") can't be used. To save
-   money, add `--no-transcribe` and say what that costs in quality.
+   money, add `--no-transcribe` and say what that costs in quality. The run prints what it actually spent, transcripts
+   included; if transcripts failed (bad key), say so and point to the key.
    If the run lists creators with too few reels, tell the user and offer to swap them at the next setup.
 7. **Brief** — write it (below).
 8. **Optional weekly run** — offer it once, and say plainly that a scheduled run spends up to `max_usd` without

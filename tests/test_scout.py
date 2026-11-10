@@ -103,7 +103,7 @@ def test_run_with_raw_writes_pack_and_skips_missing_keys(tmp_path, no_network, c
     assert pack["rule"] == scout.RULE and pack["scraped"] == "2026-10-01"
     text = (d / "topics.json").read_text()
     assert "दिल की बात" in text                          # readable UTF-8
-    assert {r["code"] for r in pack["pool"]} == {"WIN", "MEH", "B1"}
+    assert {r["code"] for r in pack["pool"]} == {"MEH", "B1"}
     again = scout.cmd_run(d, raw=raw, today=TODAY)       # same scrape twice: no duplicates
     assert [r["code"] for r in again["reels"]] == ["WIN"]
     assert "WIN" in again["views"]["alice"]
@@ -242,19 +242,49 @@ def test_run_warns_about_quiet_creators(tmp_path, no_network, capsys):
 
 def test_pool_has_median_and_skips_zero_views(tmp_path, no_network):
     d, raw = setup_scout(tmp_path)
-    raw.write_text(json.dumps([reel("alice", "WIN", 8000), reel("alice", "ZERO", 0)]))
+    raw.write_text(json.dumps([reel("alice", "WIN", 8000), reel("alice", "OK", 1100), reel("alice", "ZERO", 0)]))
     pack = scout.cmd_run(d, raw=raw, today=TODAY)
-    assert {r["code"] for r in pack["pool"]} == {"WIN"}
+    assert {r["code"] for r in pack["pool"]} == {"OK"}
     assert pack["pool"][0]["median"] == 1000
 
 
-def test_check_keys_checks_elevenlabs(monkeypatch, capsys):
+def test_check_keys_does_not_call_elevenlabs(monkeypatch):
+    """Scoped ElevenLabs keys can't read /v1/user but transcribe fine: report 'set', check on first use."""
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-secret")
-    class R:
-        status_code = 401
-        def json(self):
-            return {}
-    monkeypatch.setattr(scout.requests, "get", lambda *a, **k: R())
+    monkeypatch.setattr(scout.requests, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
     got = scout.cmd_check_keys()
-    assert got["ELEVENLABS_API_KEY"] == "refused or unreachable"
-    assert got["EXA_API_KEY"] == "missing"
+    assert got["ELEVENLABS_API_KEY"] == "set (checked on the first transcript)"
+
+
+def test_winners_flag_discovery_reels_and_tiny_creators(tmp_path, no_network):
+    d, raw = setup_scout(tmp_path)
+    t = json.loads((d / "topics.json").read_text(encoding="utf-8"))
+    t["views"] = {"alice": {f"h{i}": [500, "2026-11-01"] for i in range(5)},
+                  "bob": {f"b{i}": [5000, "2026-11-01"] for i in range(5)}}
+    (d / "topics.json").write_text(json.dumps(t), encoding="utf-8")
+    (d / "hashtags.raw.json").write_text(json.dumps([reel("alice", "WIN", 8000)]), encoding="utf-8")
+    raw.write_text(json.dumps([reel("alice", "WIN", 8000), reel("bob", "B1", 20000)]))
+    pack = scout.cmd_run(d, raw=raw, today=TODAY)
+    w = {r["code"]: r for r in pack["reels"]}
+    assert w["WIN"]["from_discovery"] is True and w["WIN"]["fragile"] is True
+    assert w["B1"]["from_discovery"] is False and w["B1"]["fragile"] is False
+
+
+def test_pool_leaves_out_winners(tmp_path, no_network):
+    d, raw = setup_scout(tmp_path)
+    pack = scout.cmd_run(d, raw=raw, today=TODAY)
+    assert "WIN" not in {r["code"] for r in pack["pool"]}
+
+
+def test_run_reports_transcripts_done_failed_and_cost(tmp_path, no_network, monkeypatch, capsys):
+    d, raw = setup_scout(tmp_path)
+    raw.write_text(json.dumps([reel("alice", "W1", 8000), reel("alice", "W2", 7000)]))
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "x")
+    def fake(url, key):
+        if "W2" in url:
+            raise RuntimeError("401 bad key")
+        return "text", "hi"
+    monkeypatch.setattr(scout, "transcribe", fake)
+    scout.cmd_run(d, raw=raw, today=TODAY)
+    out = capsys.readouterr().out
+    assert "transcripts: 1 done, 1 failed (401 bad key)" in out and "≈ $0.0" in out

@@ -30,7 +30,7 @@ none — say so and leave `news_queries` empty. Write each as a plain search sen
 
 | Key | Needed? | What it does | Where | Cost |
 |-----|---------|--------------|-------|------|
-| `APIFY_TOKEN` | Yes | Reads public reels | apify.com → sign up → Settings → API & Integrations → copy the personal token | Free plan gives $5 credit a month; a scrape is ~$0.40, the setup hashtag scan ~$0.60 |
+| `APIFY_TOKEN` | Yes | Reads public reels | apify.com → sign up → Settings → API & Integrations → copy the personal token | Free plan gives $5 credit a month; a scrape is ~$0.40, setup ~$0.70 (hashtag scan + creator check) |
 | `ELEVENLABS_API_KEY` | No | Transcribes the winning reels so the brief knows what was said | elevenlabs.io → profile → API keys | Speech-to-text minutes; free tier covers a few runs |
 | `EXA_API_KEY` | No | Finds this week's news for the niche | exa.ai → dashboard → API keys | ~$0.01 a search; free credit on sign-up |
 
